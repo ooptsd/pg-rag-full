@@ -29,6 +29,22 @@ docker compose exec postgres psql -U postgres
 > docker compose up -d --build
 > ```
 
+## 预构建镜像地址
+
+发布版本支持 Docker Hub 和 GitHub Container Registry 两种镜像源：
+
+```bash
+# Docker Hub
+docker pull ooptsd/pg-rag-full:latest
+
+# GitHub Container Registry (ghcr.io)
+docker pull ghcr.io/ooptsd/pg-rag-full:latest
+```
+
+版本标签说明：
+- `latest`: 最新稳定版本
+- `v*.*.*`: 具体版本号（如 `v0.1.0`）
+
 ## 验证运行状态
 
 连接 psql 后，可执行以下命令检查各组件：
