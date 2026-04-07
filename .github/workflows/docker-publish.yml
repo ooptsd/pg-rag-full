@@ -51,9 +51,5 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/pg-rag-full:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/pg-rag-full:${{ steps.version.outputs.VERSION }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/pg-rag-full:${{ steps.version.outputs.VERSION }}-amd64
-            ${{ secrets.DOCKERHUB_USERNAME }}/pg-rag-full:${{ steps.version.outputs.VERSION }}-arm64
             ghcr.io/${{ github.repository }}/pg-rag-full:latest
             ghcr.io/${{ github.repository }}/pg-rag-full:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository }}/pg-rag-full:${{ steps.version.outputs.VERSION }}-amd64
-            ghcr.io/${{ github.repository }}/pg-rag-full:${{ steps.version.outputs.VERSION }}-arm64
