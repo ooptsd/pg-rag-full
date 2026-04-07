@@ -74,6 +74,25 @@ LIMIT 5;
 
 > **重要**: 必须使用 `::pdb.jieba` 强制类型转换来调用中文分词器。
 
+#### 2.1 Jieba 分词器说明
+
+Jieba 是一款基于**词典 + 统计模型**的中文分词器，相比 Lindera 等分词器：
+- **优势**：对模糊的中文词边界识别更准确
+- **劣势**：分词速度相对较慢
+
+可使用以下命令快速验证分词效果：
+
+```sql
+-- 测试分词结果（会返回分词后的词数组）
+SELECT 'Hello world! 你好!'::pdb.jieba::text[];
+-- 返回: {hello," ",world,!," ",你好,!}
+
+SELECT '自然语言处理是人工智能的重要分支'::pdb.jieba::text[];
+-- 返回: {自然语言,处理,是,人工智能,的,重要,分支}
+```
+
+#### 2.2 BM25 索引创建
+
 ```sql
 -- 创建文章表
 CREATE TABLE articles (
@@ -83,33 +102,154 @@ CREATE TABLE articles (
 );
 
 -- 创建 BM25 索引（使用 jieba 分词器）
+-- key_field: 指定索引的主键字段
+-- 索引会自动维护，无需手动重建
 CREATE INDEX idx_bm25_jieba ON articles USING bm25 (
     id,
     (title::pdb.jieba),
     (content::pdb.jieba)
 ) WITH (key_field = 'id');
+```
 
--- 关键词匹配查询（OR 关系，使用 ||| 操作符）
+#### 2.3 查询操作符详解
+
+```sql
+-- 模糊匹配查询（使用 @@@ 操作符）
+-- 适用于前缀匹配、拼写纠错等场景
+SELECT id, title, pdb.score(id)
+FROM articles
+WHERE title @@@ 'Postgre';
+
+-- OR 关系查询（使用 ||| 操作符）
+-- 匹配任意关键词，返回相关性分数
 SELECT id, title, pdb.score(id)
 FROM articles
 WHERE content::pdb.jieba ||| '数据库 搜索'
 ORDER BY pdb.score(id) DESC;
 
--- 关键词匹配查询（AND 关系，使用 &&& 操作符）
+-- AND 关系查询（使用 &&& 操作符）
+-- 必须同时包含所有关键词
 SELECT id, title
 FROM articles
 WHERE content::pdb.jieba &&& '数据';
 
--- 模糊匹配查询（使用 @@@ 操作符）
-SELECT id, title
-FROM articles
-WHERE title @@@ 'Postgre';
-
--- 提取高亮匹配片段
+-- 提取高亮匹配片段（用于展示搜索关键词上下文）
 SELECT pdb.snippet(content::pdb.jieba, '<mark>', '</mark>') AS highlight
 FROM articles
 WHERE content::pdb.jieba ||| '搜索';
 ```
+
+#### 2.4 索引维护与重建
+
+当表结构发生变化（新增/删除列）或需要优化索引性能时：
+
+```sql
+-- 重建指定索引（保留原有配置）
+REINDEX INDEX idx_bm25_jieba;
+
+-- 或者重建并指定新配置
+DROP INDEX idx_bm25_jieba;
+CREATE INDEX idx_bm25_jieba ON articles USING bm25 (
+    id,
+    (title::pdb.jieba),
+    (content::pdb.jieba)
+) WITH (key_field = 'id');
+```
+
+> **注意**: 日常的 INSERT、UPDATE、DELETE 操作会**自动维护** BM25 索引，无需手动干预。
+
+### 2.5 与 PostgreSQL 主库配合（逻辑复制模式）
+
+在生产环境中，可将 ParadeDB 作为 PostgreSQL 主库的**逻辑订阅者**，实现搜索流量与 OLTP 流量分离：
+
+```
+┌─────────────────┐    逻辑复制    ┌────────────────────┐
+│   PostgreSQL    │ ────────────→ │ ParadeDB (订阅者)  │
+│   主库 (OLTP)   │   INSERT/     │ - BM25 全文索引    │
+│                 │   UPDATE/     │ - 向量相似度搜索   │
+│                 │   DELETE      │ - 图数据库查询     │
+└─────────────────┘               └────────────────────┘
+       业务写入                          搜索查询
+```
+
+#### 2.5.1 基础工作流程
+
+```sql
+-- 步骤1: 等待初始复制完成
+-- 检查复制状态：worker_type = 'table synchronization' 表示正在同步
+SELECT
+    subname,                    -- 订阅名称
+    worker_type,                -- 工作类型：table sync / apply
+    CASE WHEN relid = 0
+         THEN NULL
+         ELSE relid::regclass   -- 表名
+    END AS table_name,
+    latest_end_time             -- 最新同步时间
+FROM pg_stat_subscription
+ORDER BY 1, 2, 3;
+
+-- 更严格的检查：每个表的状态应为 'r' (ready)
+SELECT srrelid::regclass AS table_name, srsubstate
+FROM pg_subscription_rel
+WHERE srsubstate != 'r'  -- 筛选未就绪的表
+ORDER BY 1;
+```
+
+```sql
+-- 步骤2: 初始复制完成后，在 ParadeDB 上构建 BM25 索引
+-- 注意：不要在复制过程中提前建索引，会增加额外开销
+CREATE INDEX idx_articles_bm25 ON public.articles USING bm25 (
+    id,
+    (title::pdb.jieba),
+    (content::pdb.jieba)
+) WITH (key_field = 'id');
+
+-- 步骤3: 验证索引正常工作
+SELECT id, title, pdb.score(id)
+FROM articles
+WHERE content::pdb.jieba ||| '关键词'
+LIMIT 5;
+```
+
+#### 2.5.2 日常运维操作
+
+```sql
+-- 添加新表到复制
+-- 1. 在主库和 ParadeDB 同时执行 DDL
+-- 2. 在主库更新发布（publication）
+ALTER PUBLICATION app_search_pub ADD TABLE public.new_table;
+-- 3. 刷新订阅以触发初始同步
+ALTER SUBSCRIPTION app_search_sub REFRESH PUBLICATION;
+-- 4. 新表就绪后构建 BM25 索引
+CREATE INDEX idx_new_table_bm25 ON public.new_table USING bm25 (
+    id,
+    (content::pdb.jieba)
+) WITH (key_field = 'id');
+
+-- 修改索引列（新增/删除索引字段）
+-- 1. 主库和 ParadeDB 同时修改表结构
+-- 2. 等待复制追平
+-- 3. 重建 BM25 索引
+REINDEX INDEX idx_articles_bm25;
+```
+
+#### 2.5.3 复制参数调优建议
+
+对于大型或高频变更的生产表，建议为每张大表配置独立的订阅：
+
+```bash
+# 主库 (PostgreSQL) 配置
+max_replication_slots = 订阅数量 × 1.5  # 预留初始同步时的额外槽位
+max_wal_senders = max_replication_slots + 物理复制副本数
+
+# ParadeDB (订阅者) 配置
+max_replication_slots = 订阅数量 + 初始同步工作进程数
+max_logical_replication_workers = 订阅数量 × 2  # 每订阅至少 1 个应用进程 + 1 个同步进程
+max_sync_workers_per_subscription = 4  # 提高初始复制并行度
+max_worker_processes = 逻辑复制工作进程数 + 系统背景进程数
+```
+
+> **关键提示**: PostgreSQL 逻辑复制**不会**自动同步 DDL 变更，必须在主库和订阅库**分别手动执行**相同的 DDL 语句。
 
 ### 3. 图数据库查询 (Apache AGE)
 
@@ -224,5 +364,6 @@ graph TB
 ## 参考资料
 
 - [ParadeDB 官方文档](https://docs.paradedb.com)
+- [ParadeDB 逻辑复制操作指南](https://docs.paradedb.com/deploy/logical-replication/operational-guide)
 - [pgvector GitHub](https://github.com/pgvector/pgvector)
 - [Apache AGE 官方手册](https://age.apache.org/)
