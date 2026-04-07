@@ -1,0 +1,78 @@
+# 临时文件和编辑器文件
+*.swp
+*.swo
+*~
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# IDE 和编辑器配置
+.idea/
+.vscode/
+*.sublime-*
+*.code-workspace
+
+# Age 扩展相关
+age-master.zip
+*.so
+*.o
+*.a
+
+# Docker 相关
+.dockerignore
+
+# 日志文件
+*.log
+logs/
+
+# PostgreSQL 数据文件
+PG_VERSION
+pg_hba.conf
+pg_ident.conf
+postgresql.conf
+postmaster.pid
+postmaster.opts
+global/
+pg_dynshmem/
+pg_notify/
+pg_serial/
+pg_snapshots/
+pg_stat/
+pg_subtrans/
+pg_tblspc/
+pg_twophase/
+*.pid
+
+# 数据库快照和备份
+*.dump
+*.sql.bak
+*.backup
+
+# 测试相关
+test/
+tests/
+testing/
+nohup.out
+
+# 环境配置和敏感信息
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# 构建产物
+build/
+dist/
+target/
+Cargo.lock
+*.crate
+
+# 操作系统文件
+*.md~
+*.txt~
+
+# 其他
+docs/
+.claude/

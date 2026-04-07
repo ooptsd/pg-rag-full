@@ -1,0 +1,37 @@
+services:
+  postgres:
+    container_name: pg-rag-full-postgres
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql
+      # 核心初始化脚本 (init.sql) 已在 Dockerfile 中打包进镜像
+      # 如需添加业务脚本，请使用单文件挂载方式，示例:
+      # - ./my-business-init.sql:/docker-entrypoint-initdb.d/99-business-init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_search,pg_cron,pg_stat_statements,age
+      - -c
+      - search_path=ag_catalog,public
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+
+volumes:
+  pg_data:
