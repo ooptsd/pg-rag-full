@@ -6,7 +6,7 @@ services:
     #   build:
     #     context: .
     #     dockerfile: Dockerfile
-    image: ooptsd/pg-rag-full:1.2.0
+    image: ghcr.io/ooptsd/pg-rag-full:1.2.0
     restart: unless-stopped
     environment:
       - POSTGRES_PASSWORD=postgres
