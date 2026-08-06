@@ -1,17 +1,24 @@
 services:
   postgres:
     container_name: pg-rag-full-postgres
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # 部署模式：使用预构建的 Docker 镜像
+    # 如需本地构建，替换为：
+    #   build:
+    #     context: .
+    #     dockerfile: Dockerfile
+    image: ooptsd/pg-rag-full:1.2.0
+    restart: unless-stopped
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    # 关键：挂载到 /var/lib/postgresql 父目录（不是 /var/lib/postgresql/data）
+    # 容器内 PostgreSQL 18+ 会自动在 /var/lib/postgresql/18/docker/ 下创建数据
+    # 不要再用旧的 /var/lib/postgresql/data 路径，否则 initdb 会拒绝启动
     volumes:
-      - pg_data:/var/lib/postgresql
+      - ./pgdata-lightrag-4:/var/lib/postgresql
       # 核心初始化脚本 (init.sql) 已在 Dockerfile 中打包进镜像
       # 如需添加业务脚本，请使用单文件挂载方式，示例:
       # - ./my-business-init.sql:/docker-entrypoint-initdb.d/99-business-init.sql:ro
@@ -32,6 +39,3 @@ services:
       - shared_buffers=256MB
       - -c
       - work_mem=16MB
-
-volumes:
-  pg_data:
